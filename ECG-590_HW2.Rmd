@@ -1,0 +1,391 @@
+
+title: " ECG 590 HW-2""
+
+6.Suppose we collect data for a group of students in a statistics class
+with variables X1 =hours studied, X2 =undergrad GPA, and Y =
+receive an A. We fit a logistic regression and produce estimated
+coefficient, ^ ??0 = ???6, ^??1 = 0.05, ^??2 = 1.
+
+(a) Estimate the probability that a student who studies for 40 h and
+has an undergrad GPA of 3.5 gets an A in the class.
+
+(b) How many hours would the student in part (a) need to study to
+have a 50% chance of getting an A in the class?
+
+A.
+```{r}
+prob=function(x1,x2){ logi=exp(-6 + 0.05*x1 + 1*x2); p=logi/(1+logi);return(p)}
+prob(40,3.5)
+```
+
+B. We have approx 38% probability of getting A in the class.so, let's see probability for different hours.
+```{r}
+hours=seq(40,60,1)
+probs=mapply(hours, 3.5, FUN=prob)
+names(probs)=paste0(hours,"h")
+probs
+```
+
+We can see that to have 50% chance, one need to study 50 hours.
+
+
+7. Suppose that we wish to predict whether a given stock will issue a
+dividend this year ("Yes" or "No") based on X, last year's percent
+profit.We examine a large number of companies and discover that the
+mean value of X for companies that issued a dividend was ¯X = 10,
+while the mean for those that didn't was ¯X = 0. In addition, the
+variance of X for these two sets of companies was ^??2 = 36. Finally,
+80% of companies issued dividends. Assuming that X follows a normal
+distribution, predict the probability that a company will issue
+a dividend this year given that its percentage profit was X = 4 last
+year.
+
+Since, X follows a normal distribution. We can use Baye's theorem with Normal Distribution Function.
+
+```{r}
+pdf_normal = function(x, mu_k, sigma){
+  (sqrt(2*pi)*sigma)^-1*exp(-(2*sigma^2)^-1*(x-mu_k))
+  }
+
+sigma <- 6 # both classes
+
+# class 1, companies that issued a dividend
+pi_1= 0.8
+mu_1=10
+
+# class2, companies that didn't issue a dividend
+pi_2= 0.2
+mu_2 = 0
+
+# computing probabilities
+x = 4
+p_1 = (pi_1*pdf_normal(4,mu_1,sigma))/(pi_1*pdf_normal(4,mu_1,sigma) + pi_2*pdf_normal(4,mu_2,sigma))
+p_2= (pi_2*pdf_normal(4,mu_2,sigma))/(pi_1*pdf_normal(4,mu_1,sigma) + pi_2*pdf_normal(4,mu_2,sigma))
+
+# rounding the numbers
+p_1 = round(p_1,2)
+p_2 = round(p_2,2)
+
+# plot
+cbind(c("Dividend", "Non-Dividend"), c(p_1, p_2))
+```
+So, there is 82% probability that company will issue dividend this year.
+
+
+
+
+10. This question should be answered using the Weekly data set, which
+is part of the ISLR package. This data is similar in nature to the
+Smarket data from this chapter's lab, except that it contains 1, 089
+weekly returns for 21 years, from the beginning of 1990 to the end of
+2010.
+(a) Produce some numerical and graphical summaries of the Weekly
+data. Do there appear to be any patterns?
+(b) Use the full data set to perform a logistic regression with
+Direction as the response and the five lag variables plus Volume
+as predictors. Use the summary function to print the results. Do
+any of the predictors appear to be statistically significant? If so,
+which ones?
+(c) Compute the confusion matrix and overall fraction of correct
+predictions. Explain what the confusion matrix is telling you
+about the types of mistakes made by logistic regression.
+(d) Now fit the logistic regression model using a training data period
+from 1990 to 2008, with Lag2 as the only predictor. Compute the
+confusion matrix and the overall fraction of correct predictions
+for the held out data (that is, the data from 2009 and 2010).
+(e) Repeat (d) using LDA.
+(f) Repeat (d) using QDA.
+(g) Repeat (d) using KNN with K = 1.
+(h) Which of these methods appears to provide the best results on
+this data?
+(i) Experiment with different combinations of predictors, including
+possible transformations and interactions, for each of the
+methods. Report the variables, method, and associated confusion
+matrix that appears to provide the best results on the held
+out data. Note that you should also experiment with values for
+K in the KNN classifier.
+
+
+Let's first get all the libraries required to do this question
+```{r}
+library(class)    # for KNN
+library(ISLR)     # for data
+library(MASS)     # for LDA
+library(tidyverse)
+library(GGally) 
+```
+
+```{r}
+head(Weekly)
+```
+
+A.
+```{r}
+print("summary")
+summary(Weekly)
+print("coorelation")
+cor(Weekly[ ,-9])
+```
+
+
+```{r}
+ggscatmat(Weekly, color = "Direction")
+ggscatmat(Weekly, columns = 2:9, color = "Direction")
+```
+
+```{r}
+Weekly %>% mutate(row = row_number()) %>%
+  ggplot(aes(x = row, y = Volume)) + 
+  geom_point() + 
+  geom_smooth(se = FALSE)
+```
+
+
+
+
+
+B.Fitting Logistic Regression Model
+```{r}
+glm_fit_wk <- glm(Direction ~ 
+                    Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume,
+                  data = Weekly, 
+                  family = binomial)
+summary(glm_fit_wk)
+```
+
+Based on p-value, lag 2 with p-value of 0.0296 seems to be significant among all the 6 predictors along with the intercept
+
+C.
+
+```{r}
+glm_probs_wk = predict(glm_fit_wk, type = "response")
+glm_pred_wk = rep("Down", length(glm_probs_wk)) 
+glm_pred_wk[glm_probs_wk > 0.5] <- "Up"
+
+table(glm_pred_wk, Weekly$Direction)
+mean(glm_pred_wk == Weekly$Direction)
+```
+
+On an average 56% times, logistic regression model is predicting the response direction correctly. 557 out of total 605 times of UP, Logistic regression is predicting UP, which is very good but out of 484 times of down, logistic regression is predicting 54 times down only. It seems Logistic Regression is biased towards UP direction.
+
+D.Let's create a training and test data set as follows:
+```{r}
+train <- (Weekly$Year < 2009)
+Weekly_train <- Weekly[train,]
+Weekly_test <- Weekly[!train,]
+Direction_train <- Weekly_train$Direction
+Direction_test <- Weekly_test$Direction
+
+```
+
+Now's let's create a logistic model on Train data sets from 1990 to 2008:
+```{r}
+logistic_wkly <- glm(Direction ~ Lag2, 
+                     data = Weekly_train, 
+                     family = binomial)
+summary(logistic_wkly)
+```
+
+
+Now let's test the model on test data
+
+```{r}
+logistic_probs <- predict(logistic_wkly, Weekly_test, type = "response")
+logistic_pred = rep("Down", length(Direction_test))
+logistic_pred[logistic_probs > 0.5] <- "Up"
+table(logistic_pred, Direction_test)
+mean(logistic_pred == Direction_test)
+```
+
+We can see now 62.5% times the logistic regression model with only lag2 as predictor is predicting directions correctly which is more than previous 56%. Out of 61 UPs, it correctly predicted 56 times and out of 43 Downs , it predicted 9 times correctly
+
+E.LDA
+```{r}
+lda_wkly <- lda(Direction ~ Lag2, data = Weekly, subset = train)
+lda_wkly
+```
+
+```{r}
+plot(lda_wkly)
+```
+
+
+
+```{r}
+lda_probs <- predict(lda_wkly, Weekly_test)
+table(lda_probs$class, Direction_test)
+mean(lda_probs$class == Direction_test)
+```
+
+Again, LDA is performing same as logistic regression.
+
+F.QDA
+
+```{r}
+qda_wkly <- qda(Direction ~ Lag2, data = Weekly, subset = train)
+qda_wkly
+```
+
+```{r}
+qda_pred <- predict(qda_wkly, Weekly_test)
+table(qda_pred$class, Direction_test)
+mean(qda_pred$class == Direction_test)
+
+```
+QDA is actually performing worst than both LDA and logistic regression.
+
+
+G.KNN with k=1
+
+```{r}
+train_X <- as.matrix(Weekly$Lag2[train])
+test_X <- as.matrix(Weekly$Lag2[!train])
+
+set.seed(1)
+knn_pred <- knn(train_X, test_X, Direction_train, k = 1)
+table(knn_pred, Direction_test)
+mean(knn_pred == Direction_test)
+```
+
+Actually KNN is worst of all the other models
+
+H. Clearly Logistic and LDA are almost equally accurate. QDA acting little bad and KNN being worst. Clearly KNN and QDA are producing more test errors because of overfitting indicating the relation between probability of direction and lag2 predictor is more of linear.
+
+I.Let's first see logistic models
+
+```{r}
+logistic_wkly3 <- glm(Direction ~ Lag2:Lag1, 
+                     data = Weekly_train, 
+                     family = binomial)
+summary(logistic_wkly3)
+
+logistic_probs3 <- predict(logistic_wkly3, Weekly_test, type = "response")
+logistic_pred3 = rep("Down", length(Direction_test))
+logistic_pred3[logistic_probs3 > 0.5] <- "Up"
+table(logistic_pred3, Direction_test)
+mean(logistic_pred3 == Direction_test)
+```
+
+
+Let's try 1 more time with lag 1,2 and 3
+
+```{r}
+logistic_wkly4 <- glm(Direction ~ Lag3+Lag2+Lag1, 
+                     data = Weekly_train, 
+                     family = binomial)
+summary(logistic_wkly4)
+
+logistic_probs4 <- predict(logistic_wkly4, Weekly_test, type = "response")
+logistic_pred4 = rep("Down", length(Direction_test))
+logistic_pred4[logistic_probs3 > 0.5] <- "Up"
+table(logistic_pred4, Direction_test)
+mean(logistic_pred4 == Direction_test)
+```
+
+Clearly lag3 shouldn't be used a predictor at all.
+
+Let's try once again 
+```{r}
+logistic_wkly5 <- glm(Direction ~ Lag4+Lag3+Lag2+Lag1, 
+                     data = Weekly_train, 
+                     family = binomial)
+summary(logistic_wkly5)
+
+logistic_probs5 <- predict(logistic_wkly5, Weekly_test, type = "response")
+logistic_pred5 = rep("Down", length(Direction_test))
+logistic_pred5[logistic_probs5 > 0.5] <- "Up"
+table(logistic_pred5, Direction_test)
+mean(logistic_pred5 == Direction_test)
+```
+Lag4 is also not a good choice of variable.
+
+
+
+
+
+
+Let's try LDA now
+
+```{r}
+lda_wkly2 <- lda(Direction ~ Lag2:Lag1,
+                 data = Weekly, 
+                 subset = train)
+lda_wkly2
+plot(lda_wkly)
+
+```
+
+
+```{r}
+lda_probs2 <- predict(lda_wkly2, Weekly_test)
+table(lda_probs2$class, Direction_test)
+mean(lda_probs2$class == Direction_test)
+```
+
+
+Different QDA model with transformation
+
+```{r}
+qda_wkly2 <- qda(Direction ~ Lag2 + sqrt(abs(Lag2)),
+                 data = Weekly,
+                 subset = train)
+qda_wkly2
+qda_pred2 <- predict(qda_wkly2, Weekly_test)
+table(qda_pred2$class, Direction_test)
+mean(qda_pred2$class == Direction_test)
+```
+
+
+Not improving the performance at all
+
+Different KNN model
+
+```{r}
+set.seed(1)
+knn_pred3 <- knn(train_X, test_X, Direction_train, k = 3)
+table(knn_pred3, Direction_test)
+mean(knn_pred3 == Direction_test)
+```
+
+Let's change K=20
+```{r}
+set.seed(1)
+knn_pred4 <- knn(train_X, test_X, Direction_train, k = 20)
+table(knn_pred4, Direction_test)
+mean(knn_pred4 == Direction_test)
+```
+
+performance increased a bit
+
+Let's try with K=50
+```{r}
+set.seed(1)
+knn_pred5 <- knn(train_X, test_X, Direction_train, k = 50)
+table(knn_pred5, Direction_test)
+mean(knn_pred5 == Direction_test)
+```
+
+Performance decreased as K increased from 20 to 50. Let's try 10 once
+
+```{r}
+set.seed(1)
+knn_pred6 <- knn(train_X, test_X, Direction_train, k = 10)
+table(knn_pred6, Direction_test)
+mean(knn_pred6 == Direction_test)
+```
+ 
+```{r}
+set.seed(1)
+knn_pred7 <- knn(train_X, test_X, Direction_train, k = 30)
+table(knn_pred7, Direction_test)
+mean(knn_pred7 == Direction_test)
+```
+
+```{r}
+set.seed(1)
+knn_pred8 <- knn(train_X, test_X, Direction_train, k = 25)
+table(knn_pred8, Direction_test)
+mean(knn_pred8 == Direction_test)
+```
+
+So, it seems K =20 seems to be best producing accuracy among all.
